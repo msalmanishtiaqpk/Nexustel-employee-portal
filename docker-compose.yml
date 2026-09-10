@@ -1,7 +1,8 @@
-# Production-style deployment: app + PostgreSQL 16 + nightly job sidecar.
-# 1. cp .env.example .env  and set strong values for FIELD_ENCRYPTION_KEY, JOB_SECRET, SEED_ADMIN_PASSWORD, POSTGRES_PASSWORD
-# 2. docker compose up -d --build
-# 3. Put a TLS-terminating reverse proxy (Caddy / nginx / Traefik) in front of port 3000 and set APP_URL to the https URL.
+# Production deployment: app + PostgreSQL 16 + nightly job sidecar (+ optional Caddy HTTPS proxy).
+# See docs/DEPLOY.md for the full walkthrough.
+#   1. cp .env.example .env  and set DOMAIN, APP_URL, FIELD_ENCRYPTION_KEY, JOB_SECRET, SEED_ADMIN_PASSWORD, POSTGRES_PASSWORD
+#   2. docker compose --profile proxy up -d --build      (Caddy obtains a Let's Encrypt certificate for DOMAIN)
+#      or, if you already run your own reverse proxy:  docker compose up -d --build   and point it at port 3000
 services:
   db:
     image: postgres:16-alpine
@@ -24,8 +25,9 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    # Only bind to localhost; Caddy (or your own proxy) is the public entry point.
     ports:
-      - "${APP_PORT:-3000}:3000"
+      - "${APP_BIND:-127.0.0.1}:${APP_PORT:-3000}:3000"
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-nexustel}:${POSTGRES_PASSWORD:-change-me-db-password}@db:5432/${POSTGRES_DB:-nexustel}?schema=public
       APP_URL: ${APP_URL:-http://localhost:3000}
@@ -53,5 +55,25 @@ services:
       - ./docker/cron.sh:/cron.sh:ro
     entrypoint: ["/bin/sh", "/cron.sh"]
 
+  # Optional HTTPS reverse proxy. Enable with:  docker compose --profile proxy up -d
+  caddy:
+    image: caddy:2-alpine
+    profiles: ["proxy"]
+    restart: unless-stopped
+    depends_on:
+      - app
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+    volumes:
+      - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
 volumes:
   pgdata:
+  caddy_data:
+  caddy_config:

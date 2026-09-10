@@ -1,0 +1,17 @@
+# Reverse proxy with automatic HTTPS (Let's Encrypt).
+# DOMAIN comes from .env (e.g. portal.nexus-tel.com). DNS for that name must point at this server.
+{$DOMAIN} {
+    encode zstd gzip
+    reverse_proxy app:3000 {
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Real-IP {remote_host}
+    }
+    header {
+        # App already sends its own security headers; make sure nothing leaks the server.
+        -Server
+    }
+    log {
+        output stdout
+        format console
+    }
+}

@@ -46,22 +46,25 @@ Tests need `DATABASE_URL_TEST` pointing at a scratch database (it is truncated o
 
 ## Production deployment (Docker Compose)
 
+Step-by-step guide with DNS, HTTPS and backups: **[docs/DEPLOY.md](docs/DEPLOY.md)**.
+
 ```bash
 cp .env.example .env
 # Set strong values:
 #   FIELD_ENCRYPTION_KEY=$(openssl rand -hex 32)
 #   JOB_SECRET=$(openssl rand -hex 32)
 #   POSTGRES_PASSWORD=...   SEED_ADMIN_PASSWORD=...   APP_URL=https://portal.nexus-tel.com   SEED_DEMO_DATA=false
-docker compose up -d --build
+docker compose --profile proxy up -d --build
 ```
 
-The stack starts three services:
+The stack starts up to four services:
 
 - **db** – PostgreSQL 16 with a persistent volume.
 - **app** – the portal (`entrypoint.sh` runs `prisma migrate deploy` and the idempotent seed on every boot). Health check: `GET /api/health`.
 - **cron** – a tiny sidecar that calls `POST /api/jobs/finalize-attendance` nightly (22:30 UTC = 03:30 PKT by default) with `Authorization: Bearer $JOB_SECRET`.
+- **caddy** (profile `proxy`) – HTTPS reverse proxy that obtains a Let's Encrypt certificate for `DOMAIN` automatically.
 
-Put a TLS-terminating reverse proxy (Caddy, nginx, Traefik) in front of port 3000 and set `APP_URL` to the public https URL — the session cookie is only marked `Secure` when `APP_URL` starts with `https://`. Make sure the proxy forwards `X-Forwarded-For` so the IP allowlist and audit log see real client addresses.
+If you already run your own reverse proxy, start without the profile (`docker compose up -d --build`) and proxy your hostname to `127.0.0.1:3000`, forwarding `X-Forwarded-For` and `X-Forwarded-Proto`. Either way set `APP_URL` to the public https URL — the session cookie is only marked `Secure` when `APP_URL` starts with `https://`.
 
 ### Running on a PaaS instead
 Deploy the Next.js app anywhere Node 22 runs, point `DATABASE_URL` at a managed PostgreSQL 16, run `npx prisma migrate deploy` in the release step, and schedule the job endpoint with the platform's cron (any HTTP scheduler works; the job is idempotent and also runs lazily before payroll).
