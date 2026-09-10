@@ -1,6 +1,6 @@
 # Nexus-Tel Employee Portal — Requirements Analysis & Technical Design
 
-Status: **Proposal for review — no application code written yet.**
+Status: **Approved with defaults (2026-09-10) and implemented.** See the README for setup and the *Implementation notes* section at the end for deviations from this proposal.
 Author: Claude (design pass requested before implementation)
 Date: 2026-09-10
 
@@ -755,3 +755,18 @@ Each item lists the **default I will use if you don't say otherwise**. Confirmin
 
 ## Appendix B — Brand assets
 `docs/brand/nexus-tel-icon-dark.png`, `docs/brand/nexus-tel-icon-light.png` (732×899, from nexus-tel.com). Primary `#2563eb`, accent `#b8863a`, fonts Inter (body) and Sora (headings).
+
+
+---
+
+## Appendix C — Implementation notes (post-build)
+
+The application was built to this design with the defaults from Section 7. Deviations and clarifications:
+
+- **Mutations use Next.js Server Actions** (`src/server/actions/*`) instead of JSON route handlers. Every action still resolves the actor from the session and delegates to the same service layer; route handlers remain for downloads (PDF, CSV/XLSX), the health check and the scheduled job. Server Actions carry Next's built-in origin check, which covers the CSRF requirement.
+- **Times of day are stored as minutes after midnight** (`shift_start_min`, `shift_end_min`) rather than `time` columns, which keeps window arithmetic and midnight-crossing logic simple.
+- **Sensitive identifiers** (`national_id`, `bank_account_no`) are stored as `*_encrypted` + `*_last4` columns; the plaintext is never persisted.
+- **Payslips** carry `superseded_at`; re-running a reopened month supersedes rather than deletes finalized payslips. Draft payslips are replaced.
+- **Row-Level Security** (optional Phase 6 item) was not enabled; isolation is enforced structurally in the service layer and verified by the integration tests in `tests/integration.test.ts`.
+- **Half-day leave** counts as 0.5 leave days in payroll; the other half is treated as worked.
+- **Admin TOTP** was left out of v1.

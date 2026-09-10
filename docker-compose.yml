@@ -1,0 +1,57 @@
+# Production-style deployment: app + PostgreSQL 16 + nightly job sidecar.
+# 1. cp .env.example .env  and set strong values for FIELD_ENCRYPTION_KEY, JOB_SECRET, SEED_ADMIN_PASSWORD, POSTGRES_PASSWORD
+# 2. docker compose up -d --build
+# 3. Put a TLS-terminating reverse proxy (Caddy / nginx / Traefik) in front of port 3000 and set APP_URL to the https URL.
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-nexustel}
+      POSTGRES_USER: ${POSTGRES_USER:-nexustel}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me-db-password}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-nexustel} -d ${POSTGRES_DB:-nexustel}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "${APP_PORT:-3000}:3000"
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-nexustel}:${POSTGRES_PASSWORD:-change-me-db-password}@db:5432/${POSTGRES_DB:-nexustel}?schema=public
+      APP_URL: ${APP_URL:-http://localhost:3000}
+      FIELD_ENCRYPTION_KEY: ${FIELD_ENCRYPTION_KEY}
+      JOB_SECRET: ${JOB_SECRET}
+      SESSION_IDLE_HOURS: ${SESSION_IDLE_HOURS:-12}
+      SESSION_ABSOLUTE_HOURS: ${SESSION_ABSOLUTE_HOURS:-720}
+      SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-admin@nexus-tel.com}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD}
+      SEED_DEMO_DATA: ${SEED_DEMO_DATA:-false}
+      RUN_SEED: ${RUN_SEED:-true}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+
+  cron:
+    image: curlimages/curl:8.10.1
+    restart: unless-stopped
+    depends_on:
+      - app
+    environment:
+      JOB_SECRET: ${JOB_SECRET}
+      APP_INTERNAL_URL: http://app:3000
+      CRON_HOUR_UTC: ${CRON_HOUR_UTC:-22}
+      CRON_MINUTE_UTC: ${CRON_MINUTE_UTC:-30}
+    volumes:
+      - ./docker/cron.sh:/cron.sh:ro
+    entrypoint: ["/bin/sh", "/cron.sh"]
+
+volumes:
+  pgdata:
